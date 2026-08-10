@@ -51,7 +51,43 @@ async def get_company(participant_id: str):
 
 @router.delete("/participant/{participant_id:path}", status_code=204)
 async def delete_company(participant_id: str):
-    """Deregister a company entirely."""
+    """Deregister a company entirely.
+
+    Refused while tax submission is on. A company that is still submitting tax
+    documents must be wound down in order — deactivate tax submission, let it
+    reach DEACTIVATED, then deregister. Deleting underneath an active tax
+    registration would strip the company from the network while the tax
+    authority still believes it is filing.
+
+    Allowed only when taxStatus is null (never enabled) or DEACTIVATED.
+    """
+    company = await svc.get(participant_id)
+    if not company:
+        raise HTTPException(status_code=404, detail=f"No company {participant_id}")
+
+    tax_status = company["taxStatus"]
+
+    if tax_status in ("ACTIVATED", "PENDING_ACTIVATION"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cannot deregister while tax submission is {tax_status}. "
+                f"Deactivate tax submission first, then deregister once it "
+                f"reaches DEACTIVATED."
+            ),
+        )
+
+    if tax_status == "PENDING_DEACTIVATION":
+        remaining = company["taxSecondsUntilNextChange"]
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Tax submission is still deactivating (about {remaining} "
+                f"seconds remaining). Wait until it reaches DEACTIVATED, then "
+                f"deregister."
+            ),
+        )
+
     if not await svc.delete(participant_id):
         raise HTTPException(status_code=404, detail=f"No company {participant_id}")
 

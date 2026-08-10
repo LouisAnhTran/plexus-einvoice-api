@@ -124,7 +124,7 @@ Every endpoint except `/health` requires the `X-Api-Key` header.
 | `POST` | `/ap/v1/participant` | register a company |
 | `GET` | `/ap/v1/participant` | list all companies |
 | `GET` | `/ap/v1/participant/{id}` | get one — accepts participantId **or** bare UEN |
-| `DELETE` | `/ap/v1/participant/{id}` | deregister (204) |
+| `DELETE` | `/ap/v1/participant/{id}` | deregister (204) — **requires tax submission off** |
 | `POST` | `/ap/v1/participants/{id}/tax/activate` | begin tax activation |
 | `POST` | `/ap/v1/participants/{id}/tax/deactivate` | begin tax deactivation |
 
@@ -168,7 +168,26 @@ null — tax can still be activated later.
 |---|---|
 | `401` | missing or wrong `X-Api-Key` |
 | `404` | no company with that participantId or UEN |
-| `409` | already registered · tax already `ACTIVATED`/`PENDING_ACTIVATION` · deactivating something never enabled |
+| `409` | already registered · tax already `ACTIVATED`/`PENDING_ACTIVATION` · deactivating something never enabled · **deregistering while tax submission is on** |
+
+### Wind-down order
+
+A company still submitting tax documents cannot be deleted out from under its
+tax registration — deleting would strip it from the network while the tax
+authority still believes it is filing. `DELETE` is therefore refused unless
+`taxStatus` is `null` or `DEACTIVATED`:
+
+```
+taxStatus = null                  ──► DELETE allowed (never enabled)
+taxStatus = PENDING_ACTIVATION    ──► 409  deactivate first
+taxStatus = ACTIVATED             ──► 409  deactivate first
+taxStatus = PENDING_DEACTIVATION  ──► 409  wait (~N seconds, reported in the error)
+taxStatus = DEACTIVATED           ──► DELETE allowed
+```
+
+The correct sequence is **deactivate → wait for `DEACTIVATED` → deregister**.
+Deactivation is not instant, so the `PENDING_DEACTIVATION` error includes the
+seconds remaining rather than just refusing.
 | `422` | request body failed validation |
 
 ## Configuration
