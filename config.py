@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     # shape without the wait.
     auto_advance_seconds: int = 30
 
+    # Where the server listens. Read here rather than hardcoded in the
+    # container CMD so the environment and the running process cannot
+    # disagree. Use 0.0.0.0 in a container; the image sets that by default.
+    host: str = "127.0.0.1"
+    port: int = 8100
+
     class Config:
         env_file = ".env"
         env_prefix = "EINVOICE_"
